@@ -202,6 +202,7 @@ def _extract_precise_sentence(question: str, text: str) -> str | None:
     needs_paper = any(token in question for token in ["几篇", "多少篇", "文献"])
     needs_month = any(token in question for token in ["几个月", "多久", "月份", "月"])
     needs_workday = any(token in question for token in ["几个工作日", "多少个工作日", "工作日", "预审时间"])
+    needs_score = "学分" not in question and any(token in question for token in ["几分", "多少分", "分数", "成绩", "合格标准"])
     if needs_people:
         keywords.extend(["考核小组", "小组成员", "专家小组", "中期考核", "不少于", "至少", "人"])
     if needs_expert:
@@ -214,6 +215,11 @@ def _extract_precise_sentence(question: str, text: str) -> str | None:
         keywords.extend(["月", "时间", "期限", "个月"])
     if needs_workday:
         keywords.extend(["预审时间", "预审", "工作日", "不少于"])
+    if needs_score:
+        keywords.extend(["成绩", "平均", "不低于", "合格标准", "分"])
+        for token in ["必修课", "学位课", "外语", "外国语", "课程学习"]:
+            if token in question:
+                keywords.append(token)
 
     scored: list[tuple[int, str]] = []
     for candidate in candidates:
@@ -257,6 +263,18 @@ def _extract_precise_sentence(question: str, text: str) -> str | None:
                 score += 6
             if "预审" in candidate:
                 score += 3
+        if needs_score:
+            if "分" in candidate:
+                score += 5
+            if "成绩" in candidate:
+                score += 4
+            if "平均" in question and "平均" in candidate:
+                score += 3
+            for token in ["必修课", "学位课", "外语", "外国语", "课程学习"]:
+                if token in question and token in candidate:
+                    score += 4
+            if "学分" in candidate:
+                score -= 5
         if "外文文献" in question and "外文文献" in candidate:
             score += 3
         if "文献" in question and "文献" in candidate:
@@ -281,6 +299,8 @@ def _extract_precise_sentence(question: str, text: str) -> str | None:
     if needs_month and "月" not in best_candidate:
         return None
     if needs_workday and "工作日" not in best_candidate:
+        return None
+    if needs_score and "分" not in best_candidate:
         return None
     return best_candidate
 
@@ -352,8 +372,10 @@ def _question_type(question: str) -> str:
         return "paper"
     if any(token in question for token in ["几个月", "多久", "月份", "月"]):
         return "month"
-    if any(token in question for token in ["几分", "学分"]):
+    if "学分" in question:
         return "credit"
+    if any(token in question for token in ["几分", "多少分", "分数", "成绩", "合格标准"]):
+        return "score"
     return "other"
 
 
@@ -375,6 +397,11 @@ def _extract_structured_numeric_statement(question: str, text: str) -> str:
         committee_statement = _extract_committee_size_statement(question, compact, subject)
         if committee_statement:
             return committee_statement
+
+    if "学分" not in question and any(keyword in question for keyword in ["几分", "多少分", "分数", "成绩", "合格标准"]):
+        score_statement = _extract_score_statement(question, compact, subject)
+        if score_statement:
+            return score_statement
 
     if any(keyword in question for keyword in ["学术活动", "学术报告", "学术会议", "学分", "主讲次数"]):
         academic_statement = _extract_academic_activity_statement(question, compact, subject)
@@ -401,6 +428,47 @@ def _extract_structured_numeric_statement(question: str, text: str) -> str:
             return f"{prefix}应在{month_match.group(2)}个月内按照学科（专业）培养方案制定课程学习计划。"
 
     return ""
+
+
+def _extract_score_statement(question: str, compact: str, subject: str) -> str:
+    """抽取成绩分数类问题的原文数值，避免和学分、篇数等数字混淆。"""
+
+    if "学分" in question:
+        return ""
+
+    target_terms = [term for term in ["必修课", "学位课", "外语", "外国语", "课程学习", "成绩平均", "平均"] if term in question]
+    patterns = [
+        r"((?:必修课|学位课|外语学位课|外国语学位课)[^。；;！？?\n]{0,12}?成绩[^。；;！？?\n]{0,12}?(?:不低于|不少于|至少|达到|为)([0-9一二三四五六七八九十百两!！]+)分)",
+        r"((?:必修课|学位课|外语学位课|外国语学位课|课程学习)?成绩[^。；;！？?\n]{0,12}?(?:平均)?(?:不低于|不少于|至少|达到|为)([0-9一二三四五六七八九十百两!！]+)分)",
+        r"((?:不低于|不少于|至少|达到|为)([0-9一二三四五六七八九十百两!！]+)分)",
+    ]
+
+    scored: list[tuple[int, str, str]] = []
+    for pattern in patterns:
+        for match in re.finditer(pattern, compact):
+            phrase = match.group(1).replace(match.group(2), _normalize_confusable_numeric(match.group(2)))
+            if "学分" in phrase or "分制" in phrase:
+                continue
+            score = 0
+            if "成绩" in phrase:
+                score += 4
+            if "平均" in question and "平均" in phrase:
+                score += 4
+            for term in target_terms:
+                if term in phrase:
+                    score += 5
+            if "必修课" in question and "必修课" not in phrase:
+                score -= 6
+            if any(term in question for term in ["外语", "外国语"]) and not any(term in phrase for term in ["外语", "外国语"]):
+                score -= 6
+            scored.append((score, phrase, match.group(2)))
+
+    if not scored:
+        return ""
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    _, phrase, _ = scored[0]
+    return f"{phrase}。"
 
 
 def _extract_expert_count_statement(question: str, compact: str, subject: str) -> str:

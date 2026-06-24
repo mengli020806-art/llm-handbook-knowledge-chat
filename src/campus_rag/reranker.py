@@ -131,6 +131,13 @@ def _numeric_score(question: str, text: str) -> float:
         score += 0.45
     if any(token in question for token in ["几位", "多少位", "专家", "预审"]) and "位专家" in text:
         score += 0.45
+    if "学分" not in question and any(token in question for token in ["几分", "多少分", "成绩", "分数", "合格标准"]) and "分" in "".join(matches):
+        score += 0.45
+        if "成绩" in text:
+            score += 0.18
+        for token in ["必修课", "学位课", "外语", "外国语", "课程学习"]:
+            if token in question and token in text:
+                score += 0.12
     if "外文文献" in question and "外文文献" in text:
         score += 0.20
     if "专业学位" in question and "专业学位" in text:

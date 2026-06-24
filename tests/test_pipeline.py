@@ -235,6 +235,30 @@ def test_precise_question_refuses_when_required_unit_is_missing(tmp_path: Path) 
     assert "2学分" not in result.answer
 
 
+def test_score_question_extracts_matching_grade_value(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    cfg.raw_dir.mkdir(parents=True)
+    (cfg.raw_dir / "专业硕士合格标准.txt").write_text(
+        "\n".join(
+            [
+                "4.申请专业硕士学位的研究生，其课程学习的合格标准是：",
+                "（1）按课程学习计划修完全部课程，成绩合格。",
+                "（2）必修课成绩平均不低于75分。",
+                "（3）外语学位课成绩不低于60分。",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    pipeline = CampusRagPipeline(cfg)
+    pipeline.build_index()
+
+    result = pipeline.ask("申请专业硕士学位的研究生，其课程学习的合格标准是必修课成绩平均不低于多少分。")
+
+    assert "75分" in result.answer
+    assert "60分" not in result.answer
+    assert "暂未在当前知识库中找到" not in result.answer
+
+
 def test_composite_precise_question_is_split_and_merged(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     cfg.raw_dir.mkdir(parents=True)
