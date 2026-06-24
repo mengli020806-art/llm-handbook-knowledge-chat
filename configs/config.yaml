@@ -1,0 +1,31 @@
+project_name: 校园规章智能问答系统
+
+paths:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  index_dir: data/index
+  finetune_dir: data/finetune
+
+splitter:
+  max_chars: 900
+  overlap_chars: 120
+
+retrieval:
+  recall_top_k: 5
+  min_score: 0.18
+  similarity_weight: 0.65
+  keyword_weight: 0.25
+  completeness_weight: 0.10
+
+embedding:
+  backend: tfidf
+  model_name: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+  device: auto
+
+llm:
+  backend: ollama
+  model_name: qwen2.5:1.5b
+  lora_adapter:
+  max_new_tokens: 512
+  temperature: 0.2
+  num_gpu: 0
